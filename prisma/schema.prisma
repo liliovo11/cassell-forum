@@ -1,0 +1,345 @@
+// ==========================================
+// 卡塞尔学院网站 - 数据库设计
+// ==========================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================
+// 用户与鉴权
+// ==========================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  username      String    @unique
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  bio           String?   @db.Text
+  role          Role      @default(STUDENT)
+  faction       Faction?  // 所属组织：执行部/学生会/狮心会/装备部
+  level         Int       @default(1)
+  exp           Int       @default(0)
+  points        Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  posts         Post[]
+  comments      Comment[]
+  news          News[]
+  wikiEntries   WikiEntry[]
+  achievements  UserAchievement[]
+  badges        UserBadge[]
+  enrollments   Enrollment[]
+  taskProgress  UserTask[]
+  messagesSent  Message[] @relation("MessageSender")
+  messagesRecv  Message[] @relation("MessageReceiver")
+  notifications Notification[]
+}
+
+enum Role {
+  STUDENT
+  MODERATOR
+  TEACHER
+  ADMIN
+}
+
+enum Faction {
+  EXECUTIVE   // 执行部
+  STUDENT_COUNCIL // 学生会
+  LIONHEART   // 狮心会
+  EQUIPMENT   // 装备部
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ==========================================
+// 学生论坛
+// ==========================================
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text
+  category  String
+  views     Int      @default(0)
+  likes     Int      @default(0)
+  pinned    Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id])
+  comments Comment[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String   @db.Text
+  postId    String
+  authorId  String
+  createdAt DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+}
+
+// ==========================================
+// 校园新闻
+// ==========================================
+
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  summary     String
+  content     String   @db.Text
+  coverImage  String?
+  category    String
+  published   Boolean  @default(false)
+  authorId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  author User @relation(fields: [authorId], references: [id])
+}
+
+// ==========================================
+// 言灵百科 / 龙族百科（统一百科条目模型）
+// ==========================================
+
+model WikiEntry {
+  id          String     @id @default(cuid())
+  title       String
+  slug        String     @unique
+  type        WikiType
+  summary     String
+  content     String     @db.Text
+  coverImage  String?
+  authorId    String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  author User @relation(fields: [authorId], references: [id])
+}
+
+enum WikiType {
+  SPIRIT   // 言灵
+  DRAGON   // 龙族
+  WORLDVIEW // 世界观
+}
+
+// ==========================================
+// 时间线
+// ==========================================
+
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  eventDate   String   // 用字符串存储虚构世界的时间点，如"第一纪元 300年"
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// 图书馆
+// ==========================================
+
+model LibraryBook {
+  id          String   @id @default(cuid())
+  title       String
+  author      String
+  category    String
+  description String   @db.Text
+  coverImage  String?
+  fileUrl     String?
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// 课程系统
+// ==========================================
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  instructor  String
+  department  String
+  credits     Int      @default(1)
+  coverImage  String?
+  createdAt   DateTime @default(now())
+
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  progress  Int      @default(0)
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, courseId])
+}
+
+// ==========================================
+// 任务大厅
+// ==========================================
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  difficulty  String
+  rewardExp   Int      @default(0)
+  rewardPoints Int     @default(0)
+  createdAt   DateTime @default(now())
+
+  userTasks UserTask[]
+}
+
+model UserTask {
+  id        String     @id @default(cuid())
+  userId    String
+  taskId    String
+  status    TaskStatus @default(IN_PROGRESS)
+  createdAt DateTime   @default(now())
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+  task Task @relation(fields: [taskId], references: [id])
+
+  @@unique([userId, taskId])
+}
+
+enum TaskStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+// ==========================================
+// 成就系统 & 徽章系统
+// ==========================================
+
+model Achievement {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String
+  createdAt   DateTime @default(now())
+
+  users UserAchievement[]
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+}
+
+model Badge {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String
+  rarity      String   @default("common")
+  createdAt   DateTime @default(now())
+
+  users UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  earnedAt  DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  badge Badge @relation(fields: [badgeId], references: [id])
+
+  @@unique([userId, badgeId])
+}
+
+// ==========================================
+// 消息中心
+// ==========================================
+
+model Message {
+  id         String   @id @default(cuid())
+  content    String   @db.Text
+  senderId   String
+  receiverId String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  sender   User @relation("MessageSender", fields: [senderId], references: [id])
+  receiver User @relation("MessageReceiver", fields: [receiverId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  content   String
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
